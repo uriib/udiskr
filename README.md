@@ -1,4 +1,6 @@
 # udiskr
+[![AUR Version](https://img.shields.io/aur/version/udiskr?logo=archlinux)](https://aur.archlinux.org/packages/udiskr)
+
 This is a [`udisks`](https://www.freedesktop.org/wiki/Software/udisks) wrapper providing functions to automatically mount and unmount devices,
 which can be used as a lightweight alternative to [`udiskie`](https://github.com/coldfix/udiskie).
 
