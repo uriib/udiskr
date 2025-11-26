@@ -3,11 +3,8 @@ This is a [`udisks`](https://www.freedesktop.org/wiki/Software/udisks) wrapper p
 which can be used as a lightweight alternative to [`udiskie`](https://github.com/coldfix/udiskie).
 
 ## Install
-You can build `udiskr` from source with **rust nightly**.
 ```sh
-git clone https://github.com/00-KAMIDUKI/udiskr.git
-cd udiskr
-cargo +nightly build --release
+cargo +nightly install --git https://github.com/uriib/udiskr.git
 ```
 The compiled binary will be installed at `$HOME/.cargo/bin/udiskr` by default.
 
