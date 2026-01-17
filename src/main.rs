@@ -1,15 +1,20 @@
 #![feature(future_join)]
 use std::{cell::RefCell, future::join, process::Command};
 
-use futures::{StreamExt, executor::block_on};
+use futures::StreamExt as _;
 use rustc_hash::FxHashMap;
 use zbus::{
-    Connection, proxy,
+    conn::Builder,
+    proxy,
     zvariant::{OwnedObjectPath, OwnedValue},
 };
 
 fn main() {
-    block_on(run());
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+    rt.block_on(run());
 }
 
 struct Entry {
@@ -19,7 +24,12 @@ struct Entry {
 }
 
 async fn run() {
-    let system = Connection::system().await.unwrap();
+    let system = Builder::system()
+        .unwrap()
+        .internal_executor(false)
+        .build()
+        .await
+        .unwrap();
     let peer = PeerProxy::new(
         &system,
         "org.freedesktop.UDisks2",
@@ -31,7 +41,12 @@ async fn run() {
     let manager = ManagerProxy::new(&system).await.unwrap();
     let mounted_devices: RefCell<Vec<Entry>> = Default::default();
 
-    let session = Connection::session().await.unwrap();
+    let session = Builder::session()
+        .unwrap()
+        .internal_executor(false)
+        .build()
+        .await
+        .unwrap();
     let notification = NotificationsProxy::new(&session).await.unwrap();
     let notify = async |summary, body: String, actions, replaces_id: u32| match notification
         .notify(
@@ -48,7 +63,7 @@ async fn run() {
     {
         Ok(x) => Some(x),
         Err(e) => {
-            eprintln!("Failed to send notification: {}", e);
+            eprintln!("{e}");
             None
         }
     };
@@ -73,7 +88,7 @@ async fn run() {
                             if let zbus::Error::MethodError(name, _, _) = e
                                 && !name.starts_with("org.freedesktop.DBus")
                             {
-                                eprintln!("Failed to mount device: {}", e);
+                                eprintln!("{e}");
                             }
                             None
                         }
