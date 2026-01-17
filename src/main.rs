@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use zbus::{
     conn::Builder,
     proxy,
-    zvariant::{OwnedObjectPath, OwnedValue},
+    zvariant::{OwnedObjectPath, OwnedValue, Value},
 };
 
 fn main() {
@@ -82,7 +82,7 @@ async fn run() {
                 let conn = &system;
                 async move {
                     let fs = FilesystemProxy::new(conn, &obj_path).await.ok()?;
-                    match fs.mount(Default::default()).await {
+                    match fs.mount(&Default::default()).await {
                         Ok(mount_point) => Some((obj_path, mount_point)),
                         Err(ref e) => {
                             if let zbus::Error::MethodError(name, _, _) = e
@@ -175,7 +175,7 @@ trait Manager {
     interface = "org.freedesktop.UDisks2.Filesystem"
 )]
 trait Filesystem {
-    fn mount(&self, options: FxHashMap<String, OwnedValue>) -> zbus::Result<String>;
+    fn mount(&self, options: &FxHashMap<&str, Value<'_>>) -> zbus::Result<String>;
 }
 
 #[proxy(
@@ -192,7 +192,7 @@ trait Notifications {
         summary: &str,
         body: &str,
         actions: &[&str],
-        hints: &FxHashMap<String, OwnedValue>,
+        hints: &FxHashMap<&str, Value<'_>>,
         expire_timeout: i32,
     ) -> zbus::Result<u32>;
     #[zbus(signal)]
