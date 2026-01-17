@@ -8,10 +8,10 @@ rust-version = "1.88.0"
 futures = { version = "0.3.31", default-features = false, features = [
   "executor",
 ] }
-rustc-hash = { version = "2.1.1", default-features = false }
+rustc-hash = { version = "2.1.1", default-features = false, features = ["std"] }
 zbus = { version = "5.7.0", default-features = false, features = ["async-io"] }
 
 [profile.release]
-codegen-units = 1
 lto = true
 panic = "abort"
+codegen-units = 1

@@ -1,10 +1,8 @@
 #![feature(future_join)]
-use std::{
-    cell::RefCell, collections::HashMap, future::join, hash::BuildHasherDefault, process::Command,
-};
+use std::{cell::RefCell, future::join, process::Command};
 
 use futures::{StreamExt, executor::block_on};
-use rustc_hash::FxHasher;
+use rustc_hash::FxHashMap;
 use zbus::{
     Connection, proxy,
     zvariant::{OwnedObjectPath, OwnedValue},
@@ -13,8 +11,6 @@ use zbus::{
 fn main() {
     block_on(run());
 }
-
-type FastHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 struct Entry {
     path: OwnedObjectPath,
@@ -153,7 +149,7 @@ trait Manager {
     fn interfaces_added(
         &self,
         path: OwnedObjectPath,
-        interfaces_and_properties: FastHashMap<String, FastHashMap<String, OwnedValue>>,
+        interfaces_and_properties: FxHashMap<String, FxHashMap<String, OwnedValue>>,
     );
     #[zbus(signal)]
     fn interfaces_removed(&self, path: OwnedObjectPath, interfaces: Vec<String>);
@@ -164,7 +160,7 @@ trait Manager {
     interface = "org.freedesktop.UDisks2.Filesystem"
 )]
 trait Filesystem {
-    fn mount(&self, options: FastHashMap<String, OwnedValue>) -> zbus::Result<String>;
+    fn mount(&self, options: FxHashMap<String, OwnedValue>) -> zbus::Result<String>;
 }
 
 #[proxy(
@@ -181,7 +177,7 @@ trait Notifications {
         summary: &str,
         body: &str,
         actions: &[&str],
-        hints: &FastHashMap<String, OwnedValue>,
+        hints: &FxHashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> zbus::Result<u32>;
     #[zbus(signal)]
