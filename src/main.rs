@@ -1,5 +1,4 @@
-#![feature(future_join)]
-use std::{cell::RefCell, future::join, process::Command};
+use std::{cell::RefCell, process::Command, sync::Arc};
 
 use futures::StreamExt as _;
 use rustc_hash::FxHashMap;
@@ -23,6 +22,34 @@ struct Entry {
     notification_id: u32,
 }
 
+async fn send_notification(
+    proxy: &NotificationsProxy<'_>,
+    summary: &str,
+    body: &str,
+    actions: &[&str],
+    replaces_id: u32,
+) -> Option<u32> {
+    match proxy
+        .notify(
+            "udiskr",
+            replaces_id,
+            "",
+            summary,
+            body,
+            actions,
+            &Default::default(),
+            30_000,
+        )
+        .await
+    {
+        Ok(x) => Some(x),
+        Err(e) => {
+            eprintln!("Notification failed: {e}");
+            None
+        }
+    }
+}
+
 async fn run() {
     let system = Builder::system()
         .unwrap()
@@ -39,7 +66,8 @@ async fn run() {
     .unwrap();
     peer.ping().await.unwrap();
     let manager = ManagerProxy::new(&system).await.unwrap();
-    let mounted_devices: RefCell<Vec<Entry>> = Default::default();
+
+    let mounted_devices: Arc<RefCell<Vec<Entry>>> = Arc::new(RefCell::new(Vec::new()));
 
     let session = Builder::session()
         .unwrap()
@@ -47,33 +75,23 @@ async fn run() {
         .build()
         .await
         .unwrap();
+    
     let notification = NotificationsProxy::new(&session).await.unwrap();
-    let notify = async |summary, body: String, actions, replaces_id: u32| match notification
-        .notify(
-            "udiskr",
-            replaces_id,
-            "",
-            summary,
-            body.as_str(),
-            actions,
-            &Default::default(),
-            30_000,
-        )
-        .await
-    {
-        Ok(x) => Some(x),
-        Err(e) => {
-            eprintln!("{e}");
-            None
-        }
-    };
 
-    join!(
+    let notif_added = notification.clone();
+    let notif_removed = notification.clone();
+    let notif_invoked = notification.clone();
+
+    let devices_added: Arc<RefCell<Vec<Entry>>> = Arc::clone(&mounted_devices);
+    let devices_removed: Arc<RefCell<Vec<Entry>>> = Arc::clone(&mounted_devices);
+    let devices_invoked: Arc<RefCell<Vec<Entry>>> = Arc::clone(&mounted_devices);
+
+    tokio::join!(
         manager
             .receive_interfaces_added()
             .await
             .unwrap()
-            .filter_map(async |signal| signal.args().map(|x| x.path).ok())
+            .filter_map(|signal| async move { signal.args().map(|x| x.path).ok() })
             .filter(|obj_path| {
                 let res = obj_path.starts_with("/org/freedesktop/UDisks2/block_devices");
                 async move { res }
@@ -95,7 +113,7 @@ async fn run() {
                     }
                 }
             })
-            .for_each(async |(obj_path, mount_point)| {
+            .for_each(|(obj_path, mount_point)| {
                 let msg = format!(
                     "Mounted /dev/{} at {}",
                     obj_path
@@ -104,20 +122,32 @@ async fn run() {
                     mount_point
                 );
                 eprintln!("{}", &msg);
-                let id = notify("block device mounted", msg, &["default", "open"], 0).await;
-                mounted_devices.borrow_mut().push(Entry {
-                    path: obj_path,
-                    mount_point,
-                    notification_id: id.unwrap_or(0),
-                });
+                
+                let devices = Arc::clone(&devices_added);
+                let notif = notif_added.clone(); 
+                
+                async move {
+                    let id = send_notification(
+                        &notif, 
+                        "block device mounted", 
+                        &msg, 
+                        &["default", "open"], 
+                        0
+                    ).await;
+                    
+                    devices.borrow_mut().push(Entry {
+                        path: obj_path,
+                        mount_point,
+                        notification_id: id.unwrap_or(0),
+                    });
+                }
             }),
-        async {
-            let mut stream = manager.receive_interfaces_removed().await.unwrap();
-            loop {
-                let x = stream.next().await.unwrap();
-                let arg = x.args().unwrap();
 
-                let mut vec = mounted_devices.borrow_mut();
+        async move {
+            let mut stream = manager.receive_interfaces_removed().await.unwrap();
+            while let Some(x) = stream.next().await {
+                let arg = x.args().unwrap();
+                let mut vec = devices_removed.borrow_mut();
                 if let Some(i) = vec.iter().position(|x| &x.path == &arg.path) {
                     let msg = format!(
                         "/dev/{} unmounted from {}",
@@ -127,17 +157,26 @@ async fn run() {
                         vec[i].mount_point
                     );
                     eprintln!("{}", &msg);
-                    notify("block device unmounted", msg, &[], vec[i].notification_id).await;
+                    
+                    // Use local clone
+                    send_notification(
+                        &notif_removed, 
+                        "block device unmounted", 
+                        &msg, 
+                        &[], 
+                        vec[i].notification_id
+                    ).await;
+                    
                     vec.swap_remove(i);
                 }
             }
         },
-        async {
-            let mut stream = notification.receive_action_invoked().await.unwrap();
-            loop {
-                let x = stream.next().await.unwrap();
+
+        async move {
+            let mut stream = notif_invoked.receive_action_invoked().await.unwrap();
+            while let Some(x) = stream.next().await {
                 let arg = x.args().unwrap();
-                if let Some(Entry { mount_point, .. }) = mounted_devices
+                if let Some(Entry { mount_point, .. }) = devices_invoked
                     .borrow()
                     .iter()
                     .find(|x| x.notification_id == arg.id)
@@ -150,8 +189,7 @@ async fn run() {
                 }
             }
         },
-    )
-    .await;
+    );
 }
 
 #[proxy(

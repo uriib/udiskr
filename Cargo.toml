@@ -5,9 +5,9 @@ edition = "2024"
 rust-version = "1.88.0"
 
 [dependencies]
-futures = { version = "0.3.31", default-features = false, features = [] }
+futures = { version = "0.3.31", default-features = false, features = ["std"] }
 rustc-hash = { version = "2.1.1", default-features = false, features = ["std"] }
-tokio = { version = "1.49.0", features = ["rt"] }
+tokio = { version = "1.49.0", features = ["rt", "macros"] }
 zbus = { version = "5.7.0", default-features = false, features = ["tokio"] }
 
 [profile.release]
